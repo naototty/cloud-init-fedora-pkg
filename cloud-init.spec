@@ -7,7 +7,7 @@
 
 Name:           cloud-init
 Version:        0.7.5
-Release:        6%{?dist}
+Release:        7rackspace
 Summary:        Cloud instance init scripts
 
 Group:          System Environment/Base
@@ -31,6 +31,9 @@ Patch2:         cloud-init-0.7.5-udevadm-quiet.patch
 # there is a typo in setting.py
 Patch3:         cloud-init-settings-providers.patch
 
+# OnMetal configdrive support
+Patch4:         cloud-init-0.7.5-onmetal-configdrive.patch
+
 # Deal with noarch -> arch
 # https://bugzilla.redhat.com/show_bug.cgi?id=1067089
 Obsoletes:      cloud-init < 0.7.5-3
@@ -44,6 +47,7 @@ BuildRequires:  systemd-units
 Requires:       dmidecode
 %endif
 Requires:       e2fsprogs
+Requires:       redhat-lsb-core
 Requires:       iproute
 Requires:       libselinux-python
 Requires:       net-tools
@@ -164,6 +168,9 @@ fi
 
 
 %changelog
+* Fri Aug 12 2014 Paul Querna <pquerna@apache.org> - 0.7.5-7
+- Add OnMetal config drive support
+
 * Thu Jun 12 2014 Dennis Gilmore <dennis@ausil.us> - 0.7.5-6
 - fix typo in settings.py preventing metadata being fecthed in ec2
 
