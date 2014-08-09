@@ -168,7 +168,7 @@ fi
 
 
 %changelog
-* Fri Aug 12 2014 Paul Querna <pquerna@apache.org> - 0.7.5-7
+* Fri Aug 8 2014 Paul Querna <pquerna@apache.org> - 0.7.5-7
 - Add OnMetal config drive support
 
 * Thu Jun 12 2014 Dennis Gilmore <dennis@ausil.us> - 0.7.5-6
