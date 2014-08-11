@@ -7,7 +7,7 @@
 
 Name:           cloud-init
 Version:        0.7.5
-Release:        7rackspace
+Release:        8rackspace
 Summary:        Cloud instance init scripts
 
 Group:          System Environment/Base
@@ -79,6 +79,7 @@ ssh keys and to let the user run various scripts.
 %patch1 -p1
 %patch2 -p1
 %patch3 -p1
+%patch4 -p1
 
 cp -p %{SOURCE2} README.fedora
 
@@ -168,7 +169,7 @@ fi
 
 
 %changelog
-* Fri Aug 8 2014 Paul Querna <pquerna@apache.org> - 0.7.5-7
+* Fri Aug 8 2014 Paul Querna <pquerna@apache.org> - 0.7.5-8rackspace
 - Add OnMetal config drive support
 
 * Thu Jun 12 2014 Dennis Gilmore <dennis@ausil.us> - 0.7.5-6
