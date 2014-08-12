@@ -1,5 +1,5 @@
 diff --git a/cloudinit/distros/__init__.py b/cloudinit/distros/__init__.py
-index 1a56dfb..20a12f5 100644
+index 1a56dfb..21bfa79 100644
 --- a/cloudinit/distros/__init__.py
 +++ b/cloudinit/distros/__init__.py
 @@ -72,6 +72,12 @@ class Distro(object):
@@ -20,7 +20,7 @@ index 1a56dfb..20a12f5 100644
                                          mirror_info=arch_info)
  
 +    def apply_network_json(self, settings, bring_up=True):
-+        dev_names = self._write_network_from_json(settings)
++        dev_names = self._write_network_json(settings)
 +        if bring_up:
 +            return self._bring_up_interfaces(dev_names)
 +        return False
@@ -165,14 +165,23 @@ index b9bcfd8..ca7672e 100644
 +    def get_dns_servers(self):
 +        return [x['address'] for x in self._settings['services'] if x['type'] == "dns"]
 diff --git a/cloudinit/distros/rhel.py b/cloudinit/distros/rhel.py
-index e8abf11..1e67e31 100644
+index e8abf11..5f1befd 100644
 --- a/cloudinit/distros/rhel.py
 +++ b/cloudinit/distros/rhel.py
-@@ -62,6 +62,114 @@ class Distro(distros.Distro):
+@@ -28,6 +28,7 @@ from cloudinit import util
+ from cloudinit.distros import net_util
+ from cloudinit.distros import rhel_util
+ from cloudinit.settings import PER_INSTANCE
++from cloudinit.distros.net_util import NetConfHelper
+ 
+ LOG = logging.getLogger(__name__)
+ 
+@@ -62,6 +63,118 @@ class Distro(distros.Distro):
      def install_packages(self, pkglist):
          self.package_command('install', pkgs=pkglist)
  
 +    def _rhel_network_json(self, settings):
++        devs = []
 +        # depends add redhat-lsb-core
 +        nc = NetConfHelper(settings)
 +        iffn = '/etc/sysconfig/network-scripts/ifcfg-{0}'
@@ -188,6 +197,7 @@ index e8abf11..1e67e31 100644
 +            lines.append("#")
 +            lines.append("")
 +            lines.append("DEVICE={0}".format(bond['id']))
++            devs.append(bond['id'])
 +            lines.append("ONBOOT=yes")
 +            lines.append("BOOTPROTO=none")
 +            lines.append("USERCTL=no")
@@ -205,6 +215,7 @@ index e8abf11..1e67e31 100644
 +                lines.append("#")
 +                lines.append("")
 +                lines.append("DEVICE={0}".format(slavedev))
++                devs.append(slavedev)
 +                lines.append("ONBOOT=yes")
 +                lines.append("BOOTPROTO=none")
 +                lines.append("USERCTL=no")
@@ -232,6 +243,7 @@ index e8abf11..1e67e31 100644
 +            lines.append("# network_id: {0}".format(net['network_id']))
 +            lines.append("")
 +            lines.append("DEVICE={0}".format(devname))
++            devs.append(devname)
 +            if link['type'] == "vlan":
 +                lines.append("VLAN=yes")
 +                lines.append("PHYSDEV={0}".format(devname[:devname.rfind('.')]))
@@ -272,13 +284,13 @@ index e8abf11..1e67e31 100644
 +                lines.insert(0, "# Created by cloud-init on instance boot.")
 +                files[fn] = "\n".join(lines)
 +
-+        return files
++        return files, devs
 +
 +    def _write_network_json(self, settings):
-+        files = self._rhel_network_json(settings)
++        files, devs = self._rhel_network_json(settings)
 +        for (fn, data) in files.iteritems():
 +            util.write_file(fn, data)
-+        return ['all']
++        return devs
 +
      def _write_network(self, settings):
          # TODO(harlowja) fix this... since this is the ubuntu format
@@ -318,18 +330,28 @@ index 1bdca9f..9cc729c 100644
      lines = []
      netdev_lines = netdev_pformat().splitlines()
 diff --git a/cloudinit/sources/DataSourceConfigDrive.py b/cloudinit/sources/DataSourceConfigDrive.py
-index 0c35f83..c6f4bda 100644
+index 0c35f83..380f3c2 100644
 --- a/cloudinit/sources/DataSourceConfigDrive.py
 +++ b/cloudinit/sources/DataSourceConfigDrive.py
-@@ -191,10 +191,22 @@ def on_first_boot(data, distro=None):
+@@ -160,7 +160,7 @@ def get_ds_mode(cfgdrv_ver, ds_cfg=None, user=None):
+     return "net"
+ 
+ 
+-def read_config_drive(source_dir, version="2012-08-10"):
++def read_config_drive(source_dir, version="2013-10-17"):
+     reader = openstack.ConfigDriveReader(source_dir)
+     finders = [
+         (reader.read_v2, [], {'version': version}),
+@@ -191,10 +191,23 @@ def on_first_boot(data, distro=None):
      if not isinstance(data, dict):
          raise TypeError("Config-drive data expected to be a dict; not %s"
                          % (type(data)))
 +
 +    networkapplied = False
-+    jsonnet_conf = data.get('vendordata_raw', {}).get('network_info')
++    jsonnet_conf = data.get('vendordata', {}).get('network_info')
 +    if jsonnet_conf:
 +        try:
++            LOG.debug("Updating network interfaces from JSON in config drive")
 +            distro_user_config = distro.apply_network_json(jsonnet_conf)
 +            networkapplied = True
 +        except NotImplementedError:
