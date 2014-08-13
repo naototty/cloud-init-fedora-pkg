@@ -330,7 +330,7 @@ index 1bdca9f..9cc729c 100644
      lines = []
      netdev_lines = netdev_pformat().splitlines()
 diff --git a/cloudinit/sources/DataSourceConfigDrive.py b/cloudinit/sources/DataSourceConfigDrive.py
-index 0c35f83..380f3c2 100644
+index 0c35f83..9f6ba0d 100644
 --- a/cloudinit/sources/DataSourceConfigDrive.py
 +++ b/cloudinit/sources/DataSourceConfigDrive.py
 @@ -160,7 +160,7 @@ def get_ds_mode(cfgdrv_ver, ds_cfg=None, user=None):
@@ -348,7 +348,7 @@ index 0c35f83..380f3c2 100644
                          % (type(data)))
 +
 +    networkapplied = False
-+    jsonnet_conf = data.get('vendordata', {}).get('network_info')
++    jsonnet_conf = data.get('vendordata_json', {}).get('network_info')
 +    if jsonnet_conf:
 +        try:
 +            LOG.debug("Updating network interfaces from JSON in config drive")
@@ -367,3 +367,25 @@ index 0c35f83..380f3c2 100644
      files = data.get('files', {})
      if files:
          LOG.debug("Writing %s injected files", len(files))
+diff --git a/cloudinit/sources/helpers/openstack.py b/cloudinit/sources/helpers/openstack.py
+index 0fac033..9b06137 100644
+--- a/cloudinit/sources/helpers/openstack.py
++++ b/cloudinit/sources/helpers/openstack.py
+@@ -211,11 +211,16 @@ class BaseReader(object):
+                 False,
+                 lambda x: x,
+             )
+-            files['vendordata'] = (
++            files['vendordata_json'] = (
+                 self._path_join("openstack", version, 'vendor_data.json'),
+                 False,
+                 util.load_json,
+             )
++            files['vendordata'] = (
++                self._path_join("openstack", version, 'vendor_data'),
++                False,
++                lambda x: x,
++            )
+             return files
+ 
+         version = self._find_working_version(version)
