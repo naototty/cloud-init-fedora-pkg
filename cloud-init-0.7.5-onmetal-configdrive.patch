@@ -165,7 +165,7 @@ index b9bcfd8..ca7672e 100644
 +    def get_dns_servers(self):
 +        return [x['address'] for x in self._settings['services'] if x['type'] == "dns"]
 diff --git a/cloudinit/distros/rhel.py b/cloudinit/distros/rhel.py
-index e8abf11..5f1befd 100644
+index e8abf11..6bdcd26 100644
 --- a/cloudinit/distros/rhel.py
 +++ b/cloudinit/distros/rhel.py
 @@ -28,6 +28,7 @@ from cloudinit import util
@@ -295,6 +295,20 @@ index e8abf11..5f1befd 100644
      def _write_network(self, settings):
          # TODO(harlowja) fix this... since this is the ubuntu format
          entries = net_util.translate_network(settings)
+@@ -99,10 +212,13 @@ class Distro(distros.Distro):
+         return dev_names
+ 
+     def _dist_uses_systemd(self):
++        # TODO(pquerna): Figure out a more portable way of detecting systemd
++        #                as the active init system. There are other distros out there.
+         # Fedora 18 and RHEL 7 were the first adopters in their series
+         (dist, vers) = util.system_info()['dist'][:2]
+         major = (int)(vers.split('.')[0])
+         return ((dist.startswith('Red Hat Enterprise Linux') and major >= 7)
++                or (dist.startswith('CentOS Linux') and major >= 7)
+                 or (dist.startswith('Fedora') and major >= 18))
+ 
+     def apply_locale(self, locale, out_fn=None):
 diff --git a/cloudinit/netinfo.py b/cloudinit/netinfo.py
 index 1bdca9f..9cc729c 100644
 --- a/cloudinit/netinfo.py
@@ -330,10 +344,39 @@ index 1bdca9f..9cc729c 100644
      lines = []
      netdev_lines = netdev_pformat().splitlines()
 diff --git a/cloudinit/sources/DataSourceConfigDrive.py b/cloudinit/sources/DataSourceConfigDrive.py
-index 0c35f83..9f6ba0d 100644
+index 0c35f83..6ff5d68 100644
 --- a/cloudinit/sources/DataSourceConfigDrive.py
 +++ b/cloudinit/sources/DataSourceConfigDrive.py
-@@ -160,7 +160,7 @@ def get_ds_mode(cfgdrv_ver, ds_cfg=None, user=None):
+@@ -19,6 +19,7 @@
+ #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ 
+ import os
++import json
+ 
+ from cloudinit import log as logging
+ from cloudinit import sources
+@@ -125,7 +126,19 @@ class DataSourceConfigDrive(openstack.SourceMixin, sources.DataSource):
+         self.userdata_raw = results.get('userdata')
+         self.version = results['version']
+         self.files.update(results.get('files', {}))
+-        self.vendordata_raw = results.get('vendordata')
++
++        # if vendordata includes 'cloud-init', then read that explicitly
++        # for cloud-init (for namespacing).
++        vd = results.get('vendordata')
++        if isinstance(vd, dict):
++            if 'cloud-init' in vd:
++                self.vendordata_raw = vd['cloud-init']
++            else:
++                # TODO(pquerna): this is so wrong.
++                self.vendordata_raw = json.dumps(vd)
++        else:
++            self.vendordata_raw = vd
++
+         return True
+ 
+ 
+@@ -160,7 +173,7 @@ def get_ds_mode(cfgdrv_ver, ds_cfg=None, user=None):
      return "net"
  
  
@@ -342,13 +385,13 @@ index 0c35f83..9f6ba0d 100644
      reader = openstack.ConfigDriveReader(source_dir)
      finders = [
          (reader.read_v2, [], {'version': version}),
-@@ -191,10 +191,23 @@ def on_first_boot(data, distro=None):
+@@ -191,10 +204,23 @@ def on_first_boot(data, distro=None):
      if not isinstance(data, dict):
          raise TypeError("Config-drive data expected to be a dict; not %s"
                          % (type(data)))
 +
 +    networkapplied = False
-+    jsonnet_conf = data.get('vendordata_json', {}).get('network_info')
++    jsonnet_conf = data.get('vendordata', {}).get('network_info')
 +    if jsonnet_conf:
 +        try:
 +            LOG.debug("Updating network interfaces from JSON in config drive")
@@ -367,25 +410,43 @@ index 0c35f83..9f6ba0d 100644
      files = data.get('files', {})
      if files:
          LOG.debug("Writing %s injected files", len(files))
-diff --git a/cloudinit/sources/helpers/openstack.py b/cloudinit/sources/helpers/openstack.py
-index 0fac033..9b06137 100644
---- a/cloudinit/sources/helpers/openstack.py
-+++ b/cloudinit/sources/helpers/openstack.py
-@@ -211,11 +211,16 @@ class BaseReader(object):
-                 False,
-                 lambda x: x,
-             )
--            files['vendordata'] = (
-+            files['vendordata_json'] = (
-                 self._path_join("openstack", version, 'vendor_data.json'),
-                 False,
-                 util.load_json,
-             )
-+            files['vendordata'] = (
-+                self._path_join("openstack", version, 'vendor_data'),
-+                False,
-+                lambda x: x,
-+            )
-             return files
+diff --git a/cloudinit/sources/DataSourceOpenStack.py b/cloudinit/sources/DataSourceOpenStack.py
+index 0970d07..615455e 100644
+--- a/cloudinit/sources/DataSourceOpenStack.py
++++ b/cloudinit/sources/DataSourceOpenStack.py
+@@ -17,6 +17,7 @@
+ #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  
-         version = self._find_working_version(version)
+ import time
++import json
+ 
+ from cloudinit import log as logging
+ from cloudinit import sources
+@@ -146,8 +147,12 @@ class DataSourceOpenStack(openstack.SourceMixin, sources.DataSource):
+         # if vendordata includes 'cloud-init', then read that explicitly
+         # for cloud-init (for namespacing).
+         vd = results.get('vendordata')
+-        if isinstance(vd, dict) and 'cloud-init' in vd:
+-            self.vendordata_raw = vd['cloud-init']
++        if isinstance(vd, dict):
++            if 'cloud-init' in vd:
++                self.vendordata_raw = vd['cloud-init']
++            else:
++                # TODO(pquerna): this is so wrong.
++                self.vendordata_raw = json.dumps(vd)
+         else:
+             self.vendordata_raw = vd
+ 
+diff --git a/tests/unittests/test_datasource/test_openstack.py b/tests/unittests/test_datasource/test_openstack.py
+index c088bb5..ffb9bbb 100644
+--- a/tests/unittests/test_datasource/test_openstack.py
++++ b/tests/unittests/test_datasource/test_openstack.py
+@@ -241,7 +241,7 @@ class TestOpenStackDataSource(test_helpers.HttprettyTestCase):
+         self.assertEquals(EC2_META, ds_os.ec2_metadata)
+         self.assertEquals(USER_DATA, ds_os.userdata_raw)
+         self.assertEquals(2, len(ds_os.files))
+-        self.assertEquals(VENDOR_DATA, ds_os.vendordata_raw)
++        self.assertEquals(VENDOR_DATA, json.loads(ds_os.vendordata_raw))
+ 
+     @hp.activate
+     def test_bad_datasource_meta(self):
