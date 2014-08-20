@@ -41,8 +41,8 @@ Obsoletes:      cloud-init < 0.7.5-3
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildRequires:  python-devel
-BuildRequires:  python-setuptools
-BuildRequires:  systemd-units
+BuildRequires:  python-setuptools-devel
+Requires:       e2fsprogs
 %ifarch %{?ix86} x86_64 ia64
 Requires:       dmidecode
 %endif
@@ -63,9 +63,9 @@ Requires:       python-jsonpatch
 Requires:       rsyslog
 Requires:       shadow-utils
 Requires:       /usr/bin/run-parts
-Requires(post):   systemd-units
-Requires(preun):  systemd-units
-Requires(postun): systemd-units
+Requires(post):   chkconfig
+Requires(preun):  chkconfig
+Requires(postun): initscripts
 
 %description
 Cloud-init is a set of init scripts for cloud instances.  Cloud instances
@@ -97,10 +97,8 @@ rm -r $RPM_BUILD_ROOT%{python_sitelib}/tests
 
 mkdir -p $RPM_BUILD_ROOT/var/lib/cloud
 
-# /run/cloud-init needs a tmpfiles.d entry
-mkdir -p $RPM_BUILD_ROOT/run/cloud-init
-mkdir -p         $RPM_BUILD_ROOT/%{_tmpfilesdir}
-cp -p %{SOURCE3} $RPM_BUILD_ROOT/%{_tmpfilesdir}/%{name}.conf
+
+mkdir -p $RPM_BUILD_ROOT/%{_sharedstatedir}/cloud
 
 # We supply our own config file since our software differs from Ubuntu's.
 cp -p %{SOURCE1} $RPM_BUILD_ROOT/%{_sysconfdir}/cloud/cloud.cfg
@@ -108,11 +106,10 @@ cp -p %{SOURCE1} $RPM_BUILD_ROOT/%{_sysconfdir}/cloud/cloud.cfg
 mkdir -p $RPM_BUILD_ROOT/%{_sysconfdir}/rsyslog.d
 cp -p tools/21-cloudinit.conf $RPM_BUILD_ROOT/%{_sysconfdir}/rsyslog.d/21-cloudinit.conf
 
-# Install the systemd bits
-mkdir -p         $RPM_BUILD_ROOT/%{_unitdir}
-cp -p systemd/*  $RPM_BUILD_ROOT/%{_unitdir}
-
-
+# Install the init scripts
+mkdir -p $RPM_BUILD_ROOT/%{_initrddir}
+install -p -m 755 sysvinit/debian/* $RPM_BUILD_ROOT/%{_initrddir}/
+install -p -m 755 sysvinit/redhat/* $RPM_BUILD_ROOT/%{_initrddir}/
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -144,26 +141,19 @@ fi
 
 
 %files
-%license LICENSE
-%doc ChangeLog TODO README.fedora
+%doc ChangeLog LICENSE TODO README.fedora
 %config(noreplace) %{_sysconfdir}/cloud/cloud.cfg
 %dir               %{_sysconfdir}/cloud/cloud.cfg.d
 %config(noreplace) %{_sysconfdir}/cloud/cloud.cfg.d/*.cfg
 %doc               %{_sysconfdir}/cloud/cloud.cfg.d/README
 %dir               %{_sysconfdir}/cloud/templates
 %config(noreplace) %{_sysconfdir}/cloud/templates/*
-%{_unitdir}/cloud-config.service
-%{_unitdir}/cloud-config.target
-%{_unitdir}/cloud-final.service
-%{_unitdir}/cloud-init-local.service
-%{_unitdir}/cloud-init.service
-%{_tmpfilesdir}/%{name}.conf
+%{_initrddir}/cloud-*
 %{python_sitelib}/*
 %{_libexecdir}/%{name}
 %{_bindir}/cloud-init*
 %doc %{_datadir}/doc/%{name}
-%dir /run/cloud-init
-%dir /var/lib/cloud
+%dir %{_sharedstatedir}/cloud
 
 %config(noreplace) %{_sysconfdir}/rsyslog.d/21-cloudinit.conf
 
