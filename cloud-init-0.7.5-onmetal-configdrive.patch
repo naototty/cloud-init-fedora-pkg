@@ -29,7 +29,7 @@ index 1a56dfb..21bfa79 100644
          # Write it out
          dev_names = self._write_network(settings)
 diff --git a/cloudinit/distros/debian.py b/cloudinit/distros/debian.py
-index 7cf4a9e..baebc4e 100644
+index 7cf4a9e..e848bcf 100644
 --- a/cloudinit/distros/debian.py
 +++ b/cloudinit/distros/debian.py
 @@ -28,7 +28,7 @@ from cloudinit import log as logging
@@ -41,11 +41,12 @@ index 7cf4a9e..baebc4e 100644
  from cloudinit.settings import PER_INSTANCE
  
  LOG = logging.getLogger(__name__)
-@@ -72,6 +72,73 @@ class Distro(distros.Distro):
+@@ -72,6 +72,91 @@ class Distro(distros.Distro):
          self.update_package_sources()
          self.package_command('install', pkgs=pkglist)
  
 +    def _debian_network_json(self, settings):
++        devs = []
 +        nc = NetConfHelper(settings)
 +        lines = []
 +
@@ -62,10 +63,22 @@ index 7cf4a9e..baebc4e 100644
 +        bonds = nc.get_links_by_type('bond')
 +        for bond in bonds:
 +            chunk = []
++            slaves = [nc.get_link_devname(nc.get_link_by_name(x)) for x in bond['bond_links']]
++            for slave in slaves:
++                chunk.append("auto {0}".format(slave))
++                chunk.append("iface {0} inet manual".format(slave))
++                chunk.append("  bond-master {0}".format(bond['id']))
++                chunk.append("")
++            devs.append(bond['id'])
++            devs.extend(slaves)
 +            chunk.append("auto {0}".format(bond['id']))
 +            chunk.append("iface {0} inet manual".format(bond['id']))
-+            chunk.append('  bond-mode {0}'.format(bond['bond_mode']))
-+            slaves = [nc.get_link_devname(nc.get_link_by_name(x)) for x in bond['bond_links']]
++            if bond.has_key('bond_mode'):
++                chunk.append('  bond-mode {0}'.format(bond['bond_mode']))
++            if bond.has_key('bond_xmit_hash_policy'):
++                chunk.append('  bond_xmit_hash_policy {0}'.format(bond['bond_xmit_hash_policy']))
++            if bond.has_key('bond_miimon'):
++                chunk.append('  bond-miimon {0}'.format(bond['bond_miimon']))
 +            chunk.append('  bond-slaves {0}'.format(' '.join(slaves)))
 +            chunk.append("")
 +            lines.extend(chunk)
@@ -84,9 +97,14 @@ index 7cf4a9e..baebc4e 100644
 +            chunk.append("# network_id: {0}".format(net['network_id']))
 +            chunk.append("auto {0}".format(devname))
 +            chunk.append("iface {0} inet static".format(devname))
++
++            devs.append(devname)
 +            if link['type'] == "vlan":
 +                chunk.append("  vlan_raw_device {0}".format(devname[:devname.rfind('.')]))
 +                chunk.append("  hwaddress ether {0}".format(link['ethernet_mac_address']))
++                if link.has_key('mtu'):
++                    chunk.append('  mtu {0}'.format(link['mtu']))
++
 +            chunk.append("  address {0}".format(net['ip_address']))
 +            chunk.append("  netmask {0}".format(net['netmask']))
 +            gwroute = [route for route in net['routes'] if route['network'] == '0.0.0.0']
@@ -104,13 +122,13 @@ index 7cf4a9e..baebc4e 100644
 +                    route['netmask'], route['gateway']))
 +            chunk.append("")
 +            lines.extend(chunk)
-+        return {'/etc/network/interfaces': "\n".join(lines)}
++        return {'/etc/network/interfaces': "\n".join(lines)}, devs
 +
 +    def _write_network_json(self, settings):
-+        files = self._debian_network_json(settings)
++        files, devs = self._debian_network_json(settings)
 +        for (fn, data) in files.iteritems():
 +            util.write_file(fn, data)
-+        return ['all']
++        return devs
 +
      def _write_network(self, settings):
          util.write_file(self.network_conf_fn, settings)
@@ -165,7 +183,7 @@ index b9bcfd8..ca7672e 100644
 +    def get_dns_servers(self):
 +        return [x['address'] for x in self._settings['services'] if x['type'] == "dns"]
 diff --git a/cloudinit/distros/rhel.py b/cloudinit/distros/rhel.py
-index e8abf11..6bdcd26 100644
+index e8abf11..0806463 100644
 --- a/cloudinit/distros/rhel.py
 +++ b/cloudinit/distros/rhel.py
 @@ -28,6 +28,7 @@ from cloudinit import util
@@ -176,7 +194,7 @@ index e8abf11..6bdcd26 100644
  
  LOG = logging.getLogger(__name__)
  
-@@ -62,6 +63,118 @@ class Distro(distros.Distro):
+@@ -62,6 +63,129 @@ class Distro(distros.Distro):
      def install_packages(self, pkglist):
          self.package_command('install', pkgs=pkglist)
  
@@ -203,8 +221,17 @@ index e8abf11..6bdcd26 100644
 +            lines.append("USERCTL=no")
 +            lines.append("NM_CONTROLLED=no")
 +            lines.append("TYPE=Ethernet")
-+            lines.append("BONDING_OPTS=\"mode={0}\"".format(bond['bond_mode']))
++
++            opts = []
++            if bond.has_key('bond_mode'):
++                opts.append('mode={0}'.format(bond['bond_mode']))
++            if bond.has_key('bond_xmit_hash_policy'):
++                opts.append('xmit_hash_policy={0}'.format(bond['bond_xmit_hash_policy']))
++            if bond.has_key('bond_miimon'):
++                opts.append('miimon={0}'.format(bond['bond_miimon']))
++            lines.append("BONDING_OPTS=\"{0}\"".format(" ".join(opts)))
 +            files[fn] = "\n".join(lines)
++
 +
 +            for slave in bond['bond_links']:
 +                slavelink = nc.get_link_by_name(slave)
@@ -248,6 +275,8 @@ index e8abf11..6bdcd26 100644
 +                lines.append("VLAN=yes")
 +                lines.append("PHYSDEV={0}".format(devname[:devname.rfind('.')]))
 +                lines.append("MACADDR={0}".format(link['ethernet_mac_address']))
++                if link.has_key('mtu'):
++                    chunk.append('MTU={0}'.format(link['mtu']))
 +
 +            lines.append("ONBOOT=yes")
 +            lines.append("BOOTPROTO=static")
@@ -295,7 +324,7 @@ index e8abf11..6bdcd26 100644
      def _write_network(self, settings):
          # TODO(harlowja) fix this... since this is the ubuntu format
          entries = net_util.translate_network(settings)
-@@ -99,10 +212,13 @@ class Distro(distros.Distro):
+@@ -99,10 +223,13 @@ class Distro(distros.Distro):
          return dev_names
  
      def _dist_uses_systemd(self):
@@ -310,7 +339,7 @@ index e8abf11..6bdcd26 100644
  
      def apply_locale(self, locale, out_fn=None):
 diff --git a/cloudinit/netinfo.py b/cloudinit/netinfo.py
-index 1bdca9f..9cc729c 100644
+index 1bdca9f..af3bac2 100644
 --- a/cloudinit/netinfo.py
 +++ b/cloudinit/netinfo.py
 @@ -21,6 +21,7 @@
@@ -337,7 +366,7 @@ index 1bdca9f..9cc729c 100644
 +    return result
 +
 +def find_mac_addresses():
-+    output = subprocess.check_output(["ifconfig", "-a"])
++    output = util.subp(["ifconfig", "-a"])
 +    return _parse_ifconfig_output(output)
 +
  def debug_info(prefix='ci-info: '):
