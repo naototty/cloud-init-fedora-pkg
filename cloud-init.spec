@@ -7,7 +7,7 @@
 
 Name:           cloud-init
 Version:        0.7.5
-Release:        13rackspace
+Release:        14rackspace
 Summary:        Cloud instance init scripts
 
 Group:          System Environment/Base
@@ -33,6 +33,9 @@ Patch3:         cloud-init-settings-providers.patch
 
 # OnMetal configdrive support
 Patch4:         cloud-init-0.7.5-onmetal-configdrive.patch
+
+# Fix for https://bugs.launchpad.net/cloud-init/+bug/1338614
+Patch5:         cloud-init-0.7.5-bug1338614.patch
 
 # Deal with noarch -> arch
 # https://bugzilla.redhat.com/show_bug.cgi?id=1067089
@@ -169,6 +172,9 @@ fi
 
 
 %changelog
+* Fri Sep 19 2014 Jay Faulkner <jay@jvf.cc> - 0.7.5-14rackspace
+- Backported patch for https://bugs.launchpad.net/cloud-init/+bug/1338614
+
 * Fri Aug 8 2014 Paul Querna <pquerna@apache.org> - 0.7.5-8rackspace
 - Add OnMetal config drive support
 
